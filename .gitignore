@@ -1,0 +1,48 @@
+# ---------------------------------------------------------------------
+# Downloaded audio - never commit music
+# ---------------------------------------------------------------------
+*.mp3
+*.m4a
+*.opus
+*.ogg
+*.flac
+*.wav
+*.webm
+*.part
+
+# Playlist folders created by sync_playlist.ps1 live next to the scripts.
+# Audio is already ignored above; these keep the folders themselves out.
+/Intermediate - Alex/
+/Ideas for Thursday/
+/output/
+
+# ---------------------------------------------------------------------
+# spotdl sync files - these contain your personal playlist contents
+# ---------------------------------------------------------------------
+*.spotdl
+
+# ---------------------------------------------------------------------
+# Personal playlist wrappers - see sync_playlist.example.ps1
+# ---------------------------------------------------------------------
+*.local.ps1
+sync_intermediate_alex.ps1
+sync_ideas_for_thursday.ps1
+
+# ---------------------------------------------------------------------
+# Python
+# ---------------------------------------------------------------------
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# ---------------------------------------------------------------------
+# Editors / OS
+# ---------------------------------------------------------------------
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini

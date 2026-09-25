@@ -1,0 +1,9 @@
+# Playlist download + matching
+spotdl>=4.5.2
+
+# ID3 tag reading and writing
+mutagen>=1.47
+
+# Local BPM analysis, used when the online BPM lookup fails
+librosa>=0.10
+numpy>=1.24
