@@ -26,14 +26,36 @@ independent of the BPM half and work on their own.
 - Python 3.9 or newer
 - `ffmpeg`
 
-Install ffmpeg whichever way suits your platform:
+| Platform | Python | ffmpeg |
+| --- | --- | --- |
+| Windows | `winget install Python.Python.3.12` | `winget install ffmpeg` |
+| macOS | `brew install python` | `brew install ffmpeg` |
+| Debian / Ubuntu | `sudo apt install python3 python3-venv` | `sudo apt install ffmpeg` |
 
-| Platform | Command |
-| --- | --- |
-| Windows | `winget install ffmpeg` |
-| macOS | `brew install ffmpeg` |
-| Debian / Ubuntu | `sudo apt install ffmpeg` |
-| Any | `spotdl --download-ffmpeg` (fetches a private copy) |
+If you would rather not install ffmpeg system-wide, `spotdl --download-ffmpeg`
+fetches a private copy on any platform.
+
+### A Windows gotcha worth knowing
+
+Windows does not ship Python, and it ships something worse than nothing: a
+zero-byte `python.exe` stub on your `PATH` that exists only to advertise the
+Microsoft Store. If Python is not installed, `python --version` prints
+
+```
+Python was not found; run without arguments to install from the Microsoft Store
+```
+
+which looks like a broken script rather than a missing interpreter. Use the
+**`py` launcher** instead — it comes with the official installer and always
+points at a real interpreter:
+
+```powershell
+py --version
+```
+
+`sync_playlist.ps1` handles this for you: it prefers the project's `.venv`,
+falls back to `py -3`, and if no working Python 3 exists it says so plainly
+instead of failing with the Store message.
 
 ## Setup
 
@@ -44,7 +66,7 @@ Open **PowerShell**, then:
 ```powershell
 git clone https://github.com/githubbar/spotify-bpm-rename-and-sync.git
 cd spotify-bpm-rename-and-sync
-python -m venv .venv
+py -m venv .venv
 .venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
 

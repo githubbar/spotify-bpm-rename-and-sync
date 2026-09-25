@@ -24,10 +24,22 @@ import sys
 from pathlib import Path
 from typing import List, Optional
 
-from spotdl.types.playlist import Playlist
-from spotdl.utils.config import DEFAULT_CONFIG, get_config
-from spotdl.utils.formatter import sanitize_string
-from spotdl.utils.spotify import SpotifyClient
+try:
+    from spotdl.types.playlist import Playlist
+    from spotdl.utils.config import DEFAULT_CONFIG, get_config
+    from spotdl.utils.formatter import sanitize_string
+    from spotdl.utils.spotify import SpotifyClient
+except ImportError as exc:
+    sys.exit(
+        f"Missing dependency: {exc.name}\n\n"
+        "Install the requirements into this project's environment:\n"
+        "    Windows:       .venv/Scripts/python.exe -m pip install -r requirements.txt\n"
+        "    macOS / Linux: .venv/bin/python -m pip install -r requirements.txt\n\n"
+        "If there is no .venv yet, create one first:\n"
+        "    Windows:       py -m venv .venv\n"
+        "    macOS / Linux: python3 -m venv .venv\n\n"
+        "See the README for the full setup steps."
+    )
 
 __all__ = ["resolve_playlist_name", "build_sync_args", "main"]
 

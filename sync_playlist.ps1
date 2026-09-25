@@ -34,9 +34,42 @@ $ErrorActionPreference = "Stop"
 Set-Location -LiteralPath $PSScriptRoot
 
 # Prefer the project venv so this works without activating it.
-$python = Join-Path $PSScriptRoot ".venv\Scripts\python.exe"
-if (-not (Test-Path -LiteralPath $python)) {
-    $python = "python"
+$pythonExe = Join-Path $PSScriptRoot ".venv\Scripts\python.exe"
+$pythonPre = @()
+
+if (-not (Test-Path -LiteralPath $pythonExe)) {
+    # No venv yet. Fall back to a system Python, preferring the py
+    # launcher, because the bare "python" on a stock Windows PATH is a
+    # zero-byte App Execution Alias stub that only advertises the
+    # Microsoft Store. It prints "Python was not found" and fails, which
+    # is confusing if you assume it means something is wrong with this
+    # script. So each candidate is probed with --version first.
+    $pythonExe = $null
+    foreach ($candidate in @(
+            @{ Exe = "py";     Pre = @("-3") },
+            @{ Exe = "python"; Pre = @() })) {
+
+        if (-not (Get-Command $candidate.Exe -ErrorAction SilentlyContinue)) { continue }
+
+        $version = & $candidate.Exe @($candidate.Pre + @("--version")) 2>&1
+        if ($LASTEXITCODE -eq 0 -and "$version" -match "Python 3") {
+            $pythonExe = $candidate.Exe
+            $pythonPre = $candidate.Pre
+            break
+        }
+    }
+
+    if (-not $pythonExe) {
+        Write-Host "No working Python 3 found, and there is no .venv in this folder." -ForegroundColor Red
+        Write-Host ""
+        Write-Host "Windows does not ship Python. Install it with:"
+        Write-Host "    winget install Python.Python.3.12"
+        Write-Host ""
+        Write-Host "then create the environment (see the README):"
+        Write-Host "    py -m venv .venv"
+        Write-Host "    .venv\Scripts\python.exe -m pip install -r requirements.txt"
+        exit 1
+    }
 }
 
 $forwarded = @($PlaylistUrl)
@@ -45,5 +78,5 @@ if ($BpmTargetRoot) { $forwarded += @("--bpm-target", $BpmTargetRoot) }
 if ($PruneRemoved) { $forwarded += "--prune-removed" }
 if ($DryRun) { $forwarded += "--dry-run" }
 
-& $python (Join-Path $PSScriptRoot "sync_playlist.py") @forwarded
+& $pythonExe @($pythonPre + @((Join-Path $PSScriptRoot "sync_playlist.py")) + $forwarded)
 exit $LASTEXITCODE
