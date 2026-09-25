@@ -9,6 +9,7 @@
 #                           each playlist gets its own subfolder
 #   -PruneRemoved           allow deleting local files for tracks that
 #                           have left the playlist (off by default)
+#   -DryRun                 print what would run, without running it
 
 & "$PSScriptRoot\sync_playlist.ps1" `
     "https://open.spotify.com/playlist/REPLACE_WITH_YOUR_PLAYLIST_ID" `
