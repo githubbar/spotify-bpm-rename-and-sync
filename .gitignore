@@ -21,6 +21,9 @@
 # ---------------------------------------------------------------------
 *.spotdl
 
+# Hand-picked YouTube matches for your own tracks - see overrides.example.json
+overrides.json
+
 # ---------------------------------------------------------------------
 # Personal playlist wrappers - see sync_playlist.example.ps1
 # ---------------------------------------------------------------------

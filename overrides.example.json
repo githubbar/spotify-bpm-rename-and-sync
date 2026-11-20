@@ -1,0 +1,10 @@
+{
+  "_comment": "Copy to overrides.json. Maps a Spotify track (ID or open.spotify.com/track link) to a hand-picked YouTube URL; spotdl's search is skipped for that track only. Keys starting with _ are ignored.",
+
+  "https://open.spotify.com/track/0000000000000000000000": {
+    "url": "https://www.youtube.com/watch?v=XXXXXXXXXXX",
+    "note": "Artist - Title: why the automatic match fails"
+  },
+
+  "1111111111111111111111": "https://music.youtube.com/watch?v=YYYYYYYYYYY"
+}
