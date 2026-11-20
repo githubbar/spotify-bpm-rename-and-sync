@@ -76,13 +76,55 @@ threshold is loosened anywhere. In the example above the rescued
 candidate scores 100 on name, artist and duration; anything that cannot
 clear the normal bar is still rejected.
 
+A fourth, Spotify-side flakiness
+--------------------------------
+Every sync re-fetches metadata for every track (`reinit_song` ->
+`Song.from_url`), four threads at a time, through spotapi -- a scraper
+of Spotify's web-player API. A small fraction of those requests fail at
+random: "Could not get client token", "Could not get song info", or an
+empty response that surfaces as "'NoneType' object is not subscriptable".
+The same track fetches fine a moment later, but neither spotapi nor
+spotdl retries, so the track is silently skipped for that run.
+
+So `Song.from_url` is wrapped to retry a failed fetch a few times with a
+short backoff. A fetch that succeeds the first time is untouched.
+
+The same, on the YouTube side
+-----------------------------
+With four downloads running at once, YouTube occasionally refuses one
+("Sleeping 5.00 seconds as required by the site" is the polite version).
+spotdl turns any yt-dlp failure into "YT-DLP download error - <url>",
+logs the real reason only at debug level, and gives up on the track.
+The same video downloads fine moments later.
+
+So `AudioProvider.get_download_metadata` is retried too, and when it
+finally gives up the message carries yt-dlp's actual error.
+
+Manual overrides
+----------------
+Some tracks cannot be matched automatically without loosening spotdl's
+thresholds. "Son de Oriente - Levántate Negro" exists on YouTube only as
+fan uploads that name the artist in the title rather than the channel,
+so the artist score is 0 and the result is rightly rejected in general.
+
+For those, `overrides.json` next to this script maps a Spotify track to
+a YouTube URL chosen by hand; the search is skipped for that track only.
+Keys are Spotify track IDs or open.spotify.com track links; values are a
+URL string or {"url": ..., "note": ...}. See overrides.example.json.
+
 Usage: python spotdl_patched.py <normal spotdl arguments>
 """
 
+import json
 import logging
+import re
 import sys
+import time
+from pathlib import Path
 from typing import Dict, List, Optional
 
+from spotdl.download.downloader import Downloader
+from spotdl.providers.audio.base import AudioProvider, AudioProviderError
 from spotdl.types.result import Result
 from spotdl.types.song import Song
 from spotdl.utils.formatter import ratio, slugify
@@ -98,6 +140,21 @@ logger = logging.getLogger(__name__)
 _stock_calc_artists_match = matching.calc_artists_match
 _stock_order_results = matching.order_results
 _stock_ytm_search = YouTubeMusic.search
+_stock_song_from_url = Song.__dict__["from_url"].__func__
+_stock_get_download_metadata = AudioProvider.get_download_metadata
+_stock_downloader_search = Downloader.search
+
+OVERRIDES_FILE = Path(__file__).resolve().parent / "overrides.json"
+
+# yt-dlp download: total attempts, and the pause before each retry
+# (doubled every time: 5s, 10s).
+DOWNLOAD_ATTEMPTS = 3
+DOWNLOAD_BACKOFF_SECONDS = 5.0
+
+# Spotify metadata fetch: total attempts, and the pause before each retry
+# (doubled every time: 1s, 2s, ...).
+METADATA_ATTEMPTS = 4
+METADATA_BACKOFF_SECONDS = 1.0
 
 # How many times to retry a failed search with a brand new YTMusic client.
 SEARCH_RETRIES = 3
@@ -331,9 +388,119 @@ def unfiltered_fallback(provider, song: Song) -> Optional[str]:
     return best_result.url
 
 
+def song_from_url(cls, url: str) -> Song:
+    """
+    `Song.from_url`, retried on the random failures of spotapi.
+
+    The last failure is re-raised unchanged, so a track that really
+    cannot be fetched is reported exactly as stock spotdl reports it.
+    """
+
+    for attempt in range(1, METADATA_ATTEMPTS + 1):
+        try:
+            return _stock_song_from_url(cls, url)
+        except Exception as exc:  # pylint: disable=broad-except
+            if attempt == METADATA_ATTEMPTS:
+                raise
+
+            delay = METADATA_BACKOFF_SECONDS * 2 ** (attempt - 1)
+            logger.debug(
+                "Spotify metadata fetch failed for %s (%s), retrying in %ss (%s/%s)",
+                url,
+                exc,
+                delay,
+                attempt,
+                METADATA_ATTEMPTS - 1,
+            )
+            time.sleep(delay)
+
+    raise AssertionError("unreachable")
+
+
+def get_download_metadata(self, url: str, download: bool = False) -> Dict:
+    """
+    `AudioProvider.get_download_metadata`, retried on transient failures.
+
+    On the final failure the error message includes what yt-dlp actually
+    said, which stock spotdl only logs at debug level.
+    """
+
+    for attempt in range(1, DOWNLOAD_ATTEMPTS + 1):
+        try:
+            return _stock_get_download_metadata(self, url, download)
+        except AudioProviderError as exc:
+            cause = exc.__cause__
+            if attempt == DOWNLOAD_ATTEMPTS:
+                detail = f" ({str(cause).strip()})" if cause else ""
+                raise AudioProviderError(f"{exc}{detail}") from cause
+
+            delay = DOWNLOAD_BACKOFF_SECONDS * 2 ** (attempt - 1)
+            logger.warning(
+                "yt-dlp failed for %s (%s), retrying in %ss (%s/%s)",
+                url,
+                cause or exc,
+                delay,
+                attempt,
+                DOWNLOAD_ATTEMPTS - 1,
+            )
+            time.sleep(delay)
+
+    raise AssertionError("unreachable")
+
+
+_TRACK_ID = re.compile(r"(?:open\.spotify\.com/(?:intl-[a-z]+/)?track/|spotify:track:)?([A-Za-z0-9]{22})")
+
+
+def load_overrides(path: Path = OVERRIDES_FILE) -> Dict[str, str]:
+    """
+    Read overrides.json into {spotify_track_id: youtube_url}.
+
+    A missing file means no overrides. A malformed file is an error rather
+    than being silently ignored, since it would otherwise look like the
+    override "did not work".
+    """
+
+    if not path.exists():
+        return {}
+
+    with path.open(encoding="utf-8") as handle:
+        raw = json.load(handle)
+
+    overrides: Dict[str, str] = {}
+    for key, value in raw.items():
+        if key.startswith("_"):
+            continue  # comments
+
+        match = _TRACK_ID.search(key)
+        url = value.get("url") if isinstance(value, dict) else value
+        if not match or not isinstance(url, str) or not url.startswith("http"):
+            raise ValueError(f"{path.name}: bad entry {key!r}: {value!r}")
+
+        overrides[match.group(1)] = url
+
+    return overrides
+
+
+_overrides: Dict[str, str] = {}
+
+
+def downloader_search(self, song: Song) -> str:
+    """
+    `Downloader.search`, but a hand-picked URL from overrides.json wins.
+    """
+
+    url = _overrides.get(song.song_id or "")
+    if url:
+        logger.info("Using override for %s: %s", song.display_name, url)
+        return url
+
+    return _stock_downloader_search(self, song)
+
+
 def apply_patches() -> None:
     """
-    Install the patched scorer and the search retry.
+    Install the patched scorer, the search retry, the metadata and
+    download retries, and the manual overrides.
 
     `spotdl.providers.audio.base` does `from spotdl.utils.matching import
     order_results`, so it holds its own reference and has to be rebound
@@ -343,6 +510,12 @@ def apply_patches() -> None:
     matching.order_results = order_results
     audio_base.order_results = order_results
     YouTubeMusic.search = ytm_search
+    Song.from_url = classmethod(song_from_url)
+    AudioProvider.get_download_metadata = get_download_metadata
+
+    _overrides.clear()
+    _overrides.update(load_overrides())
+    Downloader.search = downloader_search
 
 
 def main() -> None:
